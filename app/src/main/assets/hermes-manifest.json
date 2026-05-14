@@ -1,0 +1,7 @@
+{
+  "revision": "9ed751b96706ffd343ae26531cd0e2152a1c7036",
+  "repository": "https://github.com/NousResearch/hermes-agent.git",
+  "note": "install.sh URL + SHA-256 are pinned to this git commit. Bump both when upgrading Hermes.",
+  "install_script_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/9ed751b96706ffd343ae26531cd0e2152a1c7036/scripts/install.sh",
+  "install_script_sha256": "83b4005317412ec82c3850cd84b49f707c5cbaf486d18e63f93ac40755c4420a"
+}

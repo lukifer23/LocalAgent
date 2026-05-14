@@ -1,0 +1,208 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - "*.*.*"
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: "0 5 */3 * *"
+  merge_group:
+    types: [ checks_requested ]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with history)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+        with:
+          dependency-graph: generate-and-submit
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
+
+      - name: Delete old Android SDK cmdline-tools
+        run: |
+          rm -rf $ANDROID_HOME/cmdline-tools/latest
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'cmdline-tools;latest tools platform-tools'
+
+      - name: Build ConnectBot Terminal
+        # --no-configuration-cache due to net.researchgate.release plugin incompatibility
+        run: ./gradlew build --no-configuration-cache
+
+      - name: Prepare release
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          if git describe --exact-match; then \
+            TAGGED=yes
+          fi
+
+          if [[ -n $TAGGED ]]; then
+            GITHUB_TAG="$(git describe)"
+            echo "${GITHUB_TAG}" > tag.txt
+            echo "Release ${GITHUB_TAG}" > release-title.txt
+          else \
+            GITHUB_TAG="git-$(git describe)"
+            GITHUB_TITLE="$(git log -1 --pretty=%B | head -1)"
+            echo "${GITHUB_TAG}" > tag.txt
+            echo "${GITHUB_TAG}: ${GITHUB_TITLE}" > release-title.txt
+          fi
+          cp ./lib/build/outputs/aar/lib-release.aar ConnectBotTerminal-${GITHUB_TAG}.aar
+
+      - name: Store artifacts for upload
+        if: ${{ github.event_name == 'push' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aar
+          path: |
+            release-title.txt
+            tag.txt
+            ConnectBotTerminal-*.aar
+
+      - name: Upload to Sonatype
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          ./gradlew publishToMavenCentral --no-configuration-cache -PmavenCentralUsername=${ORG_GRADLE_PROJECT_mavenCentralUsername} -PmavenCentralPassword=${ORG_GRADLE_PROJECT_mavenCentralPassword}
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.MAVEN_GPG_KEYID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_PASSWORD }}
+
+  upload:
+    name: Upload to GitHub releases
+    needs: build
+    if: ${{ (github.event_name == 'push') && (github.repository == 'connectbot/termlib') && ((github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/')) }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts from previous job
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: aar
+
+      - name: Set release name
+        id: name
+        run: |
+          echo "RELEASE_TITLE=$(cat release-title.txt)" >> "$GITHUB_OUTPUT"
+          echo "GITHUB_TAG=$(cat tag.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          body: "Untested build"
+          draft: true
+          tag_name: ${{ steps.name.outputs.GITHUB_TAG }}
+          name: ${{ steps.name.outputs.RELEASE_TITLE }}
+          generate_release_notes: true
+          files: |
+            ConnectBotTerminal-*.aar
+
+  docs:
+    name: Publish docs to GitHub Pages
+    needs: build
+    if: ${{ (github.event_name == 'push') && ((github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/')) }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout (with history)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e # v6.1.0
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
+
+      - name: Delete old Android SDK cmdline-tools
+        run: |
+          rm -rf $ANDROID_HOME/cmdline-tools/latest
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'cmdline-tools;latest tools platform-tools'
+
+      - name: Build documents
+        run: ./gradlew :lib:dokkaGeneratePublicationHtml :lib:dokkaGenerateMarkdown --no-configuration-cache
+
+      - name: Determine subdirectory name
+        id: subdir
+        run: |
+          echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Download existing GitHub Pages content
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Prepare docs for deployment
+        run: |
+          mkdir -p gh-pages-deploy
+          if [ -d "gh-pages" ]; then
+            cp -r gh-pages/* gh-pages-deploy/ 2>/dev/null || true
+          fi
+          SUBDIR="${{ steps.subdir.outputs.name }}"
+          rm -rf "gh-pages-deploy/${SUBDIR}"
+          mkdir -p "gh-pages-deploy/${SUBDIR}"
+          cp -r ./lib/build/dokka/markdown/* "gh-pages-deploy/${SUBDIR}/"
+          cp -r ./lib/build/dokka/html/* "gh-pages-deploy/${SUBDIR}/"
+          .github/scripts/generate-version-sitemap.sh gh-pages-deploy "${SUBDIR}" "${{ steps.pages.outputs.base_url }}"
+          .github/scripts/generate-sitemap-index.sh gh-pages-deploy "${{ steps.pages.outputs.base_url }}"
+          .github/scripts/generate-index.sh gh-pages-deploy "${{ steps.pages.outputs.base_url }}"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: gh-pages-deploy
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

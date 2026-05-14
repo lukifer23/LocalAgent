@@ -1,0 +1,21 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+**/build
+/captures
+.cxx
+.externalNativeBuild
+.kotlin/
+
+# Local artifacts
+*.apk
+*.aab
+*.ap_
+*.hprof
+
+# Signing (never commit)
+*.jks
+*.keystore

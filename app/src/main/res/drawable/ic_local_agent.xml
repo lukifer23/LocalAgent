@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#4F46E5"
+        android:pathData="M54,10C30,10,10,30,10,54s20,44,44,44s44,-20,44,-44S78,10,54,10z"/>
+    
+    <!-- Inner Dark Circle -->
+    <path
+        android:fillColor="#1E1B4B"
+        android:pathData="M54,18C34.1,18,18,34.1,18,54s16.1,36,36,36s36,-16.1,36,-36S73.9,18,54,18z"/>
+
+    <!-- Hermes Wing / Terminal Prompt -->
+    <!-- A sharp > shape that evokes speed (Hermes) and command (Shell) -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M38,36 L76,54 L38,72 L46,54 Z" />
+    
+    <!-- Glowing Status Node -->
+    <path
+        android:fillColor="#818CF8"
+        android:pathData="M72,54m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0"/>
+        
+    <!-- Cursor Underscore -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M54,72 H76 V76 H54 Z" />
+        
+</vector>
