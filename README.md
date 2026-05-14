@@ -95,6 +95,7 @@ Composer forwards plain text to Termux `hermes chat` except:
 | `app/src/main/java/com/localagent/jni/` | llama JNI + CMake. |
 | `app/src/main/assets/hermes-manifest.json` | Pinned Hermes installer script metadata. |
 | `app/src/main/assets/katex/` | Offline KaTeX JS/CSS/fonts for **`AssistantMarkdown`**. |
+| `third_party/termlib/` | Vendored ConnectBot **termlib** (`includeBuild`); shipped as plain files (no nested `.git`) so clones are self-contained. |
 | `files/hermes/home/.hermes/` (sandbox) | Synthetic Hermes home; `.env` merge target; skills mirror source. |
 
 ---
