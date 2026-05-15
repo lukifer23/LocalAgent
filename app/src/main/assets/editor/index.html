@@ -1,27 +1,58 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LocalAgent Editor</title>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1e1e1e; }
-        #editor { height: 100%; width: 100%; color: #d4d4d4; font-family: monospace; }
-        textarea { width: 100%; height: 100%; background: transparent; color: inherit; border: none; outline: none; padding: 10px; font-size: 14px; resize: none; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #272822; }
+        #editor { height: 100%; width: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
     </style>
 </head>
 <body>
-    <div id="editor">
-        <textarea id="txt" oninput="AndroidEditor.onContentChanged(this.value)"></textarea>
-    </div>
+    <div id="editor"></div>
+
+    <!-- Core Ace Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.43.3/ace.min.js"></script>
+    <!-- Extensions -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.43.3/ext-modelist.min.js"></script>
+    
     <script>
-        const txt = document.getElementById('txt');
-        function setContent(content) {
-            txt.value = content;
+        const editor = ace.edit("editor");
+        editor.setTheme("ace/theme/monokai");
+        editor.setShowPrintMargin(false);
+        editor.setOptions({
+            fontSize: "14px",
+            enableBasicAutocompletion: true,
+            enableLiveAutocompletion: true,
+            useSoftTabs: true,
+            tabSize: 4
+        });
+
+        // Bridge: content changed
+        editor.session.on('change', function() {
+            if (window.AndroidEditor) {
+                AndroidEditor.onContentChanged(editor.getValue());
+            }
+        });
+
+        // API for Android
+        function setContent(content, filename) {
+            editor.setValue(content, -1);
+            if (filename) {
+                const modelist = ace.require("ace/ext/modelist");
+                const mode = modelist.getModeForPath(filename).mode;
+                editor.session.setMode(mode);
+            }
         }
+
         function getContent() {
-            return txt.value;
+            return editor.getValue();
         }
-        // Minimal editor placeholder - in production we'd inject CodeMirror/Monaco here
+
+        function setTheme(isDark) {
+            editor.setTheme(isDark ? "ace/theme/monokai" : "ace/theme/chrome");
+        }
     </script>
 </body>
 </html>

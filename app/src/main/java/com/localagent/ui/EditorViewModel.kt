@@ -34,7 +34,10 @@ class EditorViewModel : ViewModel() {
                 _currentFile.value = file
                 _content.value = text
                 _isModified.value = false
-                webView?.evaluateJavascript("setContent(`${text.replace("`", "\\`").replace("$", "\\$")}`)", null)
+                val escaped = text.replace("\\", "\\\\")
+                    .replace("`", "\\`")
+                    .replace("$", "\\$")
+                webView?.evaluateJavascript("setContent(`${escaped}`, '${file.name}')", null)
             }
         }
     }
