@@ -46,6 +46,8 @@ import com.localagent.runtime.HermesBridgeEnv
 import com.localagent.termux.TermuxRunCommand
 import kotlinx.coroutines.launch
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -101,13 +103,13 @@ fun LocalModelRoute(windowSizeClass: WindowSizeClass) {
                         OneClickSection(scope, llm, ctx, routingStore, container, piOneClickEnv, downloading, oneClickBusy) { oneClickBusy = it; status = if(it) "" else status }
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PerformanceTuningSection(llm, scope, gpuExperimental, nCtx, nThreads, nGpuLayers)
+                        PerformanceTuningSection(llm, scope, gpuExperimental, nCtx, nThreads, nGpuLayers, snackbarHostState)
                     }
                 }
             } else {
                 ModelIntroSection(ctx)
                 OneClickSection(scope, llm, ctx, routingStore, container, piOneClickEnv, downloading, oneClickBusy) { oneClickBusy = it; status = if(it) "" else status }
-                PerformanceTuningSection(llm, scope, gpuExperimental, nCtx, nThreads, nGpuLayers)
+                PerformanceTuningSection(llm, scope, gpuExperimental, nCtx, nThreads, nGpuLayers, snackbarHostState)
             }
 
             Spacer(Modifier.padding(vertical = 8.dp))
@@ -333,7 +335,8 @@ private fun PerformanceTuningSection(
     gpuExperimental: Boolean,
     nCtx: Int,
     nThreads: Int,
-    nGpuLayers: Int
+    nGpuLayers: Int,
+    snackbarHostState: SnackbarHostState
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Performance Tuning", style = MaterialTheme.typography.titleMedium)
@@ -390,6 +393,7 @@ private fun PerformanceTuningSection(
         )
     }
 }
+
 
 @Composable
 private fun TuningSlider(
