@@ -27,8 +27,9 @@ struct LlamaBundle {
     int n_ctx = 0;
 };
 
-bool complete_internal(LlamaBundle* b, const std::string& prompt, int max_new_tokens, bool add_bos, std::string* out_err,
-                       std::string* out_text) {
+bool complete_internal(LlamaBundle* b, const std::string& prompt, int max_new_tokens, bool add_bos,
+                       const std::function<void(const std::string&)>& on_token,
+                       std::string* out_err, std::string* out_text) {
     if (!b || !b->model || !b->ctx || !b->sampler || !b->vocab) {
         *out_err = "uninitialized";
         return false;
@@ -89,7 +90,11 @@ bool complete_internal(LlamaBundle* b, const std::string& prompt, int max_new_to
             *out_err = "detokenize failed";
             return false;
         }
-        acc.append(buf, static_cast<size_t>(n));
+        std::string piece(buf, static_cast<size_t>(n));
+        acc.append(piece);
+        if (on_token) {
+            on_token(piece);
+        }
 
         llama_token mutable_last = new_token_id;
         batch = llama_batch_get_one(&mutable_last, 1);
@@ -197,7 +202,54 @@ Java_com_localagent_llm_LlamaNative_nativeComplete(JNIEnv* env, jclass, jlong ha
 
     std::string err;
     std::string text;
-    const bool ok = complete_internal(bundle, prompt, std::max(1, static_cast<int>(maxNewTokens)), addBos == JNI_TRUE, &err, &text);
+    const bool ok = complete_internal(bundle, prompt, std::max(1, static_cast<int>(maxNewTokens)), addBos == JNI_TRUE, nullptr, &err, &text);
+    if (!ok) {
+        log_err(err.c_str());
+        return env->NewStringUTF(("ERROR: " + err).c_str());
+    }
+    return env->NewStringUTF(text.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_localagent_llm_LlamaNative_nativeStream(JNIEnv* env, jclass, jlong handle, jstring jPrompt, jint maxNewTokens,
+                                                 jboolean addBos, jfloat temperature, jfloat topP, jobject onToken) {
+    if (handle == 0) {
+        return env->NewStringUTF("");
+    }
+    auto* bundle = reinterpret_cast<LlamaBundle*>(handle);
+
+    const char* prompt_utf = env->GetStringUTFChars(jPrompt, nullptr);
+    if (!prompt_utf) {
+        return env->NewStringUTF("");
+    }
+    const std::string prompt(prompt_utf);
+    env->ReleaseStringUTFChars(jPrompt, prompt_utf);
+
+    if (bundle->sampler) {
+        llama_sampler_free(bundle->sampler);
+        bundle->sampler = nullptr;
+    }
+    auto chain_params = llama_sampler_chain_default_params();
+    bundle->sampler = llama_sampler_chain_init(chain_params);
+    const float temp = std::max(0.0f, temperature);
+    const float top_p = std::clamp(topP, 0.0f, 1.0f);
+    llama_sampler_chain_add(bundle->sampler, llama_sampler_init_temp(temp));
+    llama_sampler_chain_add(bundle->sampler, llama_sampler_init_top_p(top_p, 1));
+    llama_sampler_chain_add(bundle->sampler,
+                           llama_sampler_init_dist(static_cast<uint32_t>(g_rng())));
+
+    jclass callback_class = env->GetObjectClass(onToken);
+    jmethodID invoke_method = env->GetMethodID(callback_class, "invoke", "(Ljava/lang/Object;)Ljava/lang/Object;");
+
+    auto token_callback = [&](const std::string& piece) {
+        jstring jpiece = env->NewStringUTF(piece.c_str());
+        env->CallObjectMethod(onToken, invoke_method, jpiece);
+        env->DeleteLocalRef(jpiece);
+    };
+
+    std::string err;
+    std::string text;
+    const bool ok = complete_internal(bundle, prompt, std::max(1, static_cast<int>(maxNewTokens)), addBos == JNI_TRUE, token_callback, &err, &text);
     if (!ok) {
         log_err(err.c_str());
         return env->NewStringUTF(("ERROR: " + err).c_str());

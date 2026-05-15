@@ -144,6 +144,31 @@ On-device inference uses `llama.cpp` JNI bindings. Performance depends heavily o
 
 ---
 
+## Native Inference (llama.cpp)
+
+LocalAgent uses a custom JNI bridge to **`llama.cpp`** for high-performance, on-device inference.
+
+### Hardware Acceleration
+*   **ARM Dot Product (`dotprod`)**: Optimized for modern Android chips (e.g., Snapdragon 8 Gen 2/3). The build system explicitly enables `-march=armv8.2-a+dotprod` to leverage dedicated matrix multiplication instructions.
+*   **Threading**: Automatically scales based on device core count (typically 4-8 threads) to balance speed and power consumption.
+
+### Streaming Architecture
+The inference engine supports **true real-time streaming**:
+1.  **JNI Callback**: The C++ layer invokes a Java lambda for every generated token.
+2.  **Ktor EventStream**: The internal OpenAI-compatible server streams these tokens directly to the **Hermes Agent** via Server-Sent Events (SSE).
+3.  **UI Integration**: Chat messages are updated incrementally, providing immediate feedback to the user.
+
+---
+
+## Build System: Hybrid Strategy (Termux)
+
+To support advanced Android APIs (35+) and complex NDK builds on-device, LocalAgent employs a **Hybrid Build Strategy**:
+*   **Native AArch64 Environment**: Gradle and Kotlin compilation run natively in Termux for maximum speed.
+*   **QEMU-Wrapped Toolchain**: The official Google `x86_64` `aapt2` binary is used via `qemu-user-x86-64` to handle resource linking for newer SDK versions that the native Termux `aapt2` build doesn't yet support.
+*   **Proot-Distro Library Prefix**: A small Debian container provides the `glibc` libraries required by the `x86_64` build tools, mapped via `QEMU_LD_PREFIX`.
+
+---
+
 ## Persistence
 
 Chat history is stored in a Room database with two main tables:

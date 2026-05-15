@@ -17,4 +17,14 @@ object LlamaNative {
         temperature: Float,
         topP: Float,
     ): String
+
+    external fun nativeStream(
+        handle: Long,
+        prompt: String,
+        maxNewTokens: Int,
+        addBos: Boolean,
+        temperature: Float,
+        topP: Float,
+        onToken: (String) -> Unit,
+    ): String
 }

@@ -20,7 +20,7 @@ class OpenAiCompatibleServer(
     private val port: Int,
     private val bindHost: String,
     private val bearerToken: () -> String,
-    private val infer: suspend (ChatCompletionRequest) -> Result<String>,
+    private val infer: suspend (ChatCompletionRequest, onToken: ((String) -> Unit)?) -> Result<String>,
     private val loadedModelLabel: () -> String,
 ) {
     private val json =
@@ -69,17 +69,16 @@ class OpenAiCompatibleServer(
                             }
 
                         val stream = req.stream == true
-                        val result = infer(req)
-                        val text =
-                            result.getOrElse { err ->
-                                respondError(call, HttpStatusCode.ServiceUnavailable, err.message ?: "inference failed")
-                                return@post
-                            }
-
                         val id = "localagent-${System.currentTimeMillis()}"
                         val model = req.model.ifBlank { loadedModelLabel().ifBlank { "localagent-local" } }
 
                         if (!stream) {
+                            val result = infer(req, null)
+                            val text =
+                                result.getOrElse { err ->
+                                    respondError(call, HttpStatusCode.ServiceUnavailable, err.message ?: "inference failed")
+                                    return@post
+                                }
                             val resp =
                                 ChatCompletionResponse(
                                     id = id,
@@ -124,35 +123,36 @@ class OpenAiCompatibleServer(
                                 ),
                             )
 
-                            val chunkSize = 48
-                            var offset = 0
-                            while (offset < text.length) {
-                                val end = minOf(offset + chunkSize, text.length)
-                                val piece = text.substring(offset, end)
-                                offset = end
+                            val result =
+                                infer(req) { piece ->
+                                    send(
+                                        ChatCompletionChunk(
+                                            id = id,
+                                            model = model,
+                                            choices =
+                                                listOf(
+                                                    ChunkChoice(index = 0, delta = ChunkDelta(content = piece)),
+                                                ),
+                                        ),
+                                    )
+                                }
+
+                            if (result.isFailure) {
+                                // EventStream error handling is limited, we just close or send a pseudo-chunk
+                                write("data: {\"error\": \"inference failed\"}\n\n".toByteArray(Charsets.UTF_8))
+                            } else {
                                 send(
                                     ChatCompletionChunk(
                                         id = id,
                                         model = model,
                                         choices =
                                             listOf(
-                                                ChunkChoice(index = 0, delta = ChunkDelta(content = piece)),
+                                                ChunkChoice(index = 0, delta = ChunkDelta(), finishReason = "stop"),
                                             ),
                                     ),
                                 )
+                                write("data: [DONE]\n\n".toByteArray(Charsets.UTF_8))
                             }
-
-                            send(
-                                ChatCompletionChunk(
-                                    id = id,
-                                    model = model,
-                                    choices =
-                                        listOf(
-                                            ChunkChoice(index = 0, delta = ChunkDelta(), finishReason = "stop"),
-                                        ),
-                                ),
-                            )
-                            write("data: [DONE]\n\n".toByteArray(Charsets.UTF_8))
                             flush()
                         }
                     }

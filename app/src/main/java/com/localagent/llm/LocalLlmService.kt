@@ -44,7 +44,7 @@ class LocalLlmService(
             port = HermesPaths.LLM_HTTP_PORT,
             bindHost = "0.0.0.0",
             bearerToken = bearerToken,
-            infer = { req ->
+            infer = { req, onToken ->
                 mutex.withLock {
                     val modelHandle = handle
                     if (modelHandle == 0L) {
@@ -55,14 +55,26 @@ class LocalLlmService(
                     val temperature = req.temperature?.toFloat()?.coerceIn(0f, 2f) ?: 0.8f
                     val topP = req.topP?.toFloat()?.coerceIn(0.01f, 1f) ?: 0.95f
                     val raw =
-                        LlamaNative.nativeComplete(
-                            modelHandle,
-                            prompt,
-                            max,
-                            false,
-                            temperature,
-                            topP,
-                        )
+                        if (onToken != null) {
+                            LlamaNative.nativeStream(
+                                modelHandle,
+                                prompt,
+                                max,
+                                false,
+                                temperature,
+                                topP,
+                                onToken,
+                            )
+                        } else {
+                            LlamaNative.nativeComplete(
+                                modelHandle,
+                                prompt,
+                                max,
+                                false,
+                                temperature,
+                                topP,
+                            )
+                        }
                     if (raw.startsWith("ERROR:")) {
                         Result.failure(IllegalStateException(raw.removePrefix("ERROR:").trim()))
                     } else {

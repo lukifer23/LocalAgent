@@ -17,13 +17,30 @@ Native Android shell around **[Hermes Agent](https://hermes-agent.nousresearch.c
 | **Keys tab** | Encrypted vault; **Sign in with Google (Gemini / OpenAI-compatible base)** when `GOOGLE_OAUTH_CLIENT_ID` is set in `gradle.properties`; OpenAI API keys in browser; custom OIDC; internal OAuth/OIDC state never written to Hermes `.env`. |
 | **Settings** | **Wi‑Fi-only bridge / LLM listener** policy (binds bridge only on Wi‑Fi; local HTTP follows same guard); rolling **bridge diagnostics** log (TCP, AUTH, JSON) with copy. |
 | **Local model tab** | One-click Qwen path, **warmup benchmark** (latency / ~tok/s); bundled GGUF + parallel download merge **size verify**. |
-| **Chat** | Persists **`BridgeEvent`** stream; **`/help`**, **`/model`**, **`/skills`** handled in-process; **`/model`** routing modes; assistant markdown with **animated** code blocks. |
+| Chat | Persists **`BridgeEvent`** stream; **`/help`**, **`/model`**, **`/skills`** handled in-process; **`/model`** routing modes; assistant markdown with **animated** code blocks. |
 | **Assistant rendering** | **CommonMark** + GFM tables, fenced code (copy), **KaTeX** offline; code blocks use enter animation. |
+| **Local LLM** | **True streaming inference** via llama.cpp JNI; hardware-accelerated on modern ARM (dotprod). |
 | **Downloads** | Unpinned GGUF: resume **`*.part`** with **`Range`**. Cold start ≥ **8 MiB** and range-capable CDN: parallel **2–8** segment fetch, merge-on-disk, fallback to resumable single connection on failure. Pinned SHA: single-stream download + verify (no parallel). |
 
 ---
 
 ## Build
+
+### On-Device (Termux) - Recommended
+
+LocalAgent is optimized for building directly on your Android device using Termux. This path handles native NDK dependencies and specialized toolchain requirements.
+
+1.  **Setup Environment**: Run the provided setup script to configure the hybrid build environment (requires `proot-distro` for library compatibility).
+    ```bash
+    curl -sL https://raw.githubusercontent.com/lukifer23/LocalAgent/main/setup_termux_build.sh | bash
+    ```
+2.  **Build**:
+    ```bash
+    cd ~/LocalAgent
+    ./build.sh
+    ```
+
+### Desktop (Android Studio)
 
 Requires **JDK 17** (AGP 9 expects a supported toolchain). Example:
 

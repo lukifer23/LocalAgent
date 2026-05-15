@@ -62,7 +62,7 @@ val cmakeBuildHost by tasks.registering(Exec::class) {
 
 android {
     namespace = "org.connectbot.terminal"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 24
@@ -75,7 +75,7 @@ android {
         }
 
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += listOf("arm64-v8a")
             debugSymbolLevel = "full"
         }
     }

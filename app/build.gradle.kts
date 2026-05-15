@@ -18,16 +18,20 @@ android {
         manifestPlaceholders["appAuthRedirectScheme"] = "com.localagent"
         buildConfigField("String", "OAUTH_REDIRECT_URI", "\"com.localagent:/oauth\"")
         val googleOAuthClientId =
-            (project.findProperty("GOOGLE_OAUTH_CLIENT_ID") as String?)?.trim().orEmpty()
+            project.findProperty("GOOGLE_OAUTH_CLIENT_ID")?.toString() ?: ""
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"$googleOAuthClientId\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake {
-                cppFlags += "-std=c++20"
-                arguments += "-DANDROID_STL=c++_shared"
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DGGML_NATIVE=OFF",
+                    "-DCMAKE_C_FLAGS=-march=armv8.2-a+dotprod",
+                    "-DCMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod"
+                )
             }
         }
     }
