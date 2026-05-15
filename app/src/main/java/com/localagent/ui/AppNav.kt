@@ -162,7 +162,7 @@ fun AppNav(
             composable(Routes.HERMES) { HermesSetupRoute() }
             composable(Routes.TERMINAL) { TerminalRoute() }
             composable(Routes.PROVIDERS) { ProvidersRoute() }
-            composable(Routes.LOCAL_MODEL) { LocalModelRoute() }
+            composable(Routes.LOCAL_MODEL) { LocalModelRoute(windowSizeClass) }
             composable(Routes.SETTINGS) { SettingsRoute() }
             composable(Routes.WORKSTATION) { WorkstationView() }
         }

@@ -100,6 +100,14 @@ class LocalLlmService(
         dataStore.edit { it[EXPERIMENTAL_GPU] = enabled }
     }
 
+    fun nCtxFlow(): Flow<Int> = dataStore.data.map { it[N_CTX] ?: 4096 }.distinctUntilChanged()
+    fun nThreadsFlow(): Flow<Int> = dataStore.data.map { it[N_THREADS] ?: optimalThreads() }.distinctUntilChanged()
+    fun nGpuLayersFlow(): Flow<Int> = dataStore.data.map { it[N_GPU_LAYERS] ?: 0 }.distinctUntilChanged()
+
+    suspend fun setNCtx(n: Int) { dataStore.edit { it[N_CTX] = n } }
+    suspend fun setNThreads(n: Int) { dataStore.edit { it[N_THREADS] = n } }
+    suspend fun setNGpuLayers(n: Int) { dataStore.edit { it[N_GPU_LAYERS] = n } }
+
     suspend fun loadModel(
         path: String,
         nGpuLayers: Int? = null,

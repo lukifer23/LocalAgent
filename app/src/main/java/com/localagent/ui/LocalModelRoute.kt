@@ -46,9 +46,13 @@ import com.localagent.runtime.HermesBridgeEnv
 import com.localagent.termux.TermuxRunCommand
 import kotlinx.coroutines.launch
 
+import androidx.compose.material3.Slider
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LocalModelRoute() {
+fun LocalModelRoute(windowSizeClass: WindowSizeClass) {
     val container = LocalAppContainer.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -63,12 +67,19 @@ fun LocalModelRoute() {
     val target = remember { downloader.defaultQwenPath() }
     val llm = container.localLlm
     val routingStore = remember(ctx) { OpenAiRoutingStore(ctx) }
+    
     val gpuExperimental by llm.experimentalGpuFlow().collectAsStateWithLifecycle(initialValue = false)
+    val nCtx by llm.nCtxFlow().collectAsStateWithLifecycle(initialValue = 4096)
+    val nThreads by llm.nThreadsFlow().collectAsStateWithLifecycle(initialValue = 4)
+    val nGpuLayers by llm.nGpuLayersFlow().collectAsStateWithLifecycle(initialValue = 0)
+
     var oneClickBusy by remember { mutableStateOf(false) }
     val piOneClickEnv =
         remember(ctx.applicationContext) {
             TermuxRunCommand.resultPendingIntent(ctx.applicationContext, 4411, "one_click_env")
         }
+
+    val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -83,95 +94,25 @@ fun LocalModelRoute() {
                     .fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                stringResource(R.string.local_model_intro),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                HermesBridgeEnv.build(ctx).getValue("OPENAI_BASE_URL"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                stringResource(R.string.local_model_one_click_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            if (oneClickBusy) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(stringResource(R.string.local_model_one_click_progress), style = MaterialTheme.typography.labelMedium)
-            }
-            Button(
-                onClick = {
-                    scope.launch {
-                        oneClickBusy = true
-                        llm
-                            .bootstrapBundledQwenLocalFirst(
-                                ctx,
-                                routingStore,
-                                container.envWriter,
-                                container.credentialVault.snapshot(),
-                            ).onSuccess {
-                                status = ctx.getString(R.string.local_model_one_click_done)
-                                snackbarHostState.showSnackbar(status)
-                                val merged =
-                                    container.envWriter.mergedDotEnvContent(
-                                        container.credentialVault.snapshot(),
-                                    )
-                                when {
-                                    TermuxRunCommand.isTermuxInstalled(ctx) &&
-                                        TermuxRunCommand.hasRunCommandPermission(ctx) ->
-                                        runCatching {
-                                            TermuxRunCommand.start(
-                                                ctx,
-                                                TermuxRunCommand.pushHermesDotEnvStdin(
-                                                    ctx,
-                                                    merged,
-                                                    piOneClickEnv,
-                                                ),
-                                            )
-                                            snackbarHostState.showSnackbar(
-                                                ctx.getString(R.string.local_model_termux_push_started),
-                                            )
-                                        }.onFailure { e ->
-                                            snackbarHostState.showSnackbar(
-                                                e.message ?: ctx.getString(R.string.local_model_termux_push_failed),
-                                            )
-                                        }
-                                    else ->
-                                        snackbarHostState.showSnackbar(
-                                            ctx.getString(R.string.local_model_termux_push_skipped),
-                                        )
-                                }
-                            }.onFailure {
-                                status = it.message ?: ctx.getString(R.string.hermes_download_failed)
-                                snackbarHostState.showSnackbar(status)
-                            }
-                        oneClickBusy = false
+            if (isExpanded) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ModelIntroSection(ctx)
+                        OneClickSection(scope, llm, ctx, routingStore, container, piOneClickEnv, downloading, oneClickBusy) { oneClickBusy = it; status = if(it) "" else status }
                     }
-                },
-                enabled = !downloading && !oneClickBusy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.CloudDownload, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.local_model_one_click))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PerformanceTuningSection(llm, scope, gpuExperimental, nCtx, nThreads, nGpuLayers)
+                    }
                 }
+            } else {
+                ModelIntroSection(ctx)
+                OneClickSection(scope, llm, ctx, routingStore, container, piOneClickEnv, downloading, oneClickBusy) { oneClickBusy = it; status = if(it) "" else status }
+                PerformanceTuningSection(llm, scope, gpuExperimental, nCtx, nThreads, nGpuLayers)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.local_model_experimental_gpu), modifier = Modifier.weight(1f))
-                Switch(
-                    checked = gpuExperimental,
-                    onCheckedChange = { checked ->
-                        scope.launch { llm.setExperimentalGpuLayers(checked) }
-                    },
-                )
-            }
+
+            Spacer(Modifier.padding(vertical = 8.dp))
+            Text("Advanced Configuration", style = MaterialTheme.typography.titleMedium)
+
             OutlinedButton(
                 onClick = {
                     scope.launch {
@@ -245,12 +186,7 @@ fun LocalModelRoute() {
                     scope.launch {
                         runCatching {
                             val ok =
-                                llm.loadModel(
-                                    target.absolutePath,
-                                    nGpuLayers = null,
-                                    nCtx = 4096,
-                                    nThreads = null,
-                                )
+                                llm.loadModel(target.absolutePath)
                             if (ok) {
                                 llm.startHttpServer()
                                 status =
@@ -290,9 +226,9 @@ fun LocalModelRoute() {
             }
             Button(
                 onClick = {
-                    llm.stopHttpServer()
                     scope.launch {
                         llm.unload()
+                        llm.stopHttpServer()
                         snackbarHostState.showSnackbar(ctx.getString(R.string.local_model_stop))
                     }
                 },
@@ -308,5 +244,149 @@ fun LocalModelRoute() {
                 Text(status, style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+}
+
+@Composable
+private fun ModelIntroSection(ctx: android.content.Context) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            stringResource(R.string.local_model_intro),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            HermesBridgeEnv.build(ctx).getValue("OPENAI_BASE_URL"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+    }
+}
+
+@Composable
+private fun OneClickSection(
+    scope: kotlinx.coroutines.CoroutineScope,
+    llm: com.localagent.llm.LocalLlmService,
+    ctx: android.content.Context,
+    routingStore: com.localagent.auth.OpenAiRoutingStore,
+    container: com.localagent.di.AppContainer,
+    piOneClickEnv: android.app.PendingIntent,
+    downloading: Boolean,
+    oneClickBusy: Boolean,
+    onBusyChange: (Boolean) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            stringResource(R.string.local_model_one_click_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        if (oneClickBusy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text(stringResource(R.string.local_model_one_click_progress), style = MaterialTheme.typography.labelMedium)
+        }
+        Button(
+            onClick = {
+                scope.launch {
+                    onBusyChange(true)
+                    llm
+                        .bootstrapBundledQwenLocalFirst(
+                            ctx,
+                            routingStore,
+                            container.envWriter,
+                            container.credentialVault.snapshot(),
+                        ).onSuccess {
+                            val merged =
+                                container.envWriter.mergedDotEnvContent(
+                                    container.credentialVault.snapshot(),
+                                )
+                            if (TermuxRunCommand.isTermuxInstalled(ctx) &&
+                                TermuxRunCommand.hasRunCommandPermission(ctx)) {
+                                TermuxRunCommand.start(
+                                    ctx,
+                                    TermuxRunCommand.pushHermesDotEnvStdin(
+                                        ctx,
+                                        merged,
+                                        piOneClickEnv,
+                                    ),
+                                )
+                            }
+                        }
+                    onBusyChange(false)
+                }
+            },
+            enabled = !downloading && !oneClickBusy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CloudDownload, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.local_model_one_click))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PerformanceTuningSection(
+    llm: com.localagent.llm.LocalLlmService,
+    scope: kotlinx.coroutines.CoroutineScope,
+    gpuExperimental: Boolean,
+    nCtx: Int,
+    nThreads: Int,
+    nGpuLayers: Int
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Performance Tuning", style = MaterialTheme.typography.titleMedium)
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Vulkan GPU Acceleration", style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = gpuExperimental,
+                onCheckedChange = { checked ->
+                    scope.launch { llm.setExperimentalGpuLayers(checked) }
+                },
+            )
+        }
+
+        TuningSlider("Context Window", nCtx.toFloat(), 512f, 16384f, 512f) { 
+            scope.launch { llm.setNCtx(it.toInt()) }
+        }
+        
+        TuningSlider("CPU Threads", nThreads.toFloat(), 1f, 12f, 1f) { 
+            scope.launch { llm.setNThreads(it.toInt()) }
+        }
+
+        if (gpuExperimental) {
+            TuningSlider("GPU Layers", nGpuLayers.toFloat(), 0f, 99f, 1f) { 
+                scope.launch { llm.setNGpuLayers(it.toInt()) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TuningSlider(
+    label: String,
+    value: Float,
+    min: Float,
+    max: Float,
+    step: Float,
+    onValueChange: (Float) -> Unit
+) {
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            Text(value.toInt().toString(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = min..max,
+            steps = ((max - min) / step).toInt() - 1
+        )
     }
 }
