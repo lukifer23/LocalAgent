@@ -28,7 +28,9 @@ android {
             cmake {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
+                    "-DANDROID_PLATFORM=android-28",
                     "-DGGML_NATIVE=OFF",
+                    "-DGGML_VULKAN=ON",
                     "-DCMAKE_C_FLAGS=-march=armv8.2-a+dotprod",
                     "-DCMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod"
                 )
