@@ -12,11 +12,26 @@
 
 #include "llama.h"
 #include "mtmd.h"
+#include "mtmd-helper.h"
 
 namespace {
 
+void log_info(const char* msg) {
+    __android_log_print(ANDROID_LOG_INFO, "LocalAgentLlama", "%s", msg);
+}
+
 void log_err(const char* msg) {
     __android_log_print(ANDROID_LOG_ERROR, "LocalAgentLlama", "%s", msg);
+}
+
+void llama_log_callback(enum ggml_log_level level, const char* text, void* user_data) {
+    (void)user_data;
+    int android_level = ANDROID_LOG_INFO;
+    if (level == GGML_LOG_LEVEL_ERROR) android_level = ANDROID_LOG_ERROR;
+    else if (level == GGML_LOG_LEVEL_WARN) android_level = ANDROID_LOG_WARN;
+    else if (level == GGML_LOG_LEVEL_DEBUG) android_level = ANDROID_LOG_DEBUG;
+    
+    __android_log_print(android_level, "LlamaCpp", "%s", text);
 }
 
 thread_local std::mt19937 g_rng{std::random_device{}()};
@@ -28,6 +43,7 @@ struct LlamaBundle {
     const llama_vocab* vocab = nullptr;
     mtmd_context* mtmd_ctx = nullptr;
     int n_ctx = 0;
+    llama_pos n_past = 0;
 };
 
 bool complete_internal(LlamaBundle* b, const std::string& prompt, 
@@ -41,46 +57,76 @@ bool complete_internal(LlamaBundle* b, const std::string& prompt,
     }
 
     const llama_vocab* vocab = b->vocab;
+    mtmd_input_chunks* chunks = mtmd_input_chunks_init();
 
-    // Use libllama's native tokenization as base
-    const int n_prompt_raw = -llama_tokenize(vocab, prompt.c_str(), static_cast<int>(prompt.size()), nullptr, 0, add_bos, true);
-    if (n_prompt_raw <= 0) {
-        *out_err = "tokenize sizing failed";
-        return false;
-    }
-
-    std::vector<llama_token> prompt_tokens(static_cast<size_t>(n_prompt_raw));
-    if (llama_tokenize(vocab, prompt.c_str(), static_cast<int>(prompt.size()), prompt_tokens.data(),
-                       static_cast<int>(prompt_tokens.size()), add_bos, true) < 0) {
-        *out_err = "tokenize failed";
-        return false;
-    }
-
-    // TODO: Integrate mtmd_tokenize and mtmd_encode for vision.
-    // For this build pass, we ensure everything compiles using opaque types correctly.
     if (image_pixels && b->mtmd_ctx) {
-        // Placeholder for mtmd usage
-        mtmd_input_chunks* chunks = mtmd_input_chunks_init();
-        mtmd_input_chunks_free(chunks);
-    }
+        // Convert ARGB to RGB
+        std::vector<uint8_t> rgb(static_cast<size_t>(img_w * img_h * 3));
+        for (int i = 0; i < img_w * img_h; ++i) {
+            uint32_t p = image_pixels[i];
+            rgb[i * 3 + 0] = (p >> 16) & 0xFF; // R
+            rgb[i * 3 + 1] = (p >> 8) & 0xFF;  // G
+            rgb[i * 3 + 2] = p & 0xFF;         // B
+        }
 
-    const int n_predict = std::max(1, max_new_tokens);
-    const int need_ctx = static_cast<int>(prompt_tokens.size()) + n_predict + 32;
-    if (need_ctx > b->n_ctx) {
-        *out_err = "context overflow";
-        return false;
-    }
+        mtmd_bitmap* bitmap = mtmd_bitmap_init(img_w, img_h, rgb.data());
+        const mtmd_bitmap* bitmaps[1] = { bitmap };
 
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), static_cast<int32_t>(prompt_tokens.size()));
+        std::string final_prompt = prompt;
+        const std::string marker = mtmd_default_marker();
+        if (final_prompt.find(marker) == std::string::npos) {
+            final_prompt = marker + "\n" + final_prompt;
+        }
+
+        mtmd_input_text text_in;
+        text_in.text = final_prompt.c_str();
+        text_in.add_special = add_bos;
+        text_in.parse_special = true;
+
+        if (mtmd_tokenize(b->mtmd_ctx, chunks, &text_in, bitmaps, 1) != 0) {
+            *out_err = "multimodal tokenize failed";
+            mtmd_bitmap_free(bitmap);
+            mtmd_input_chunks_free(chunks);
+            return false;
+        }
+        mtmd_bitmap_free(bitmap);
+
+        llama_pos new_n_past = 0;
+        if (mtmd_helper_eval_chunks(b->mtmd_ctx, b->ctx, chunks, b->n_past, 0, 2048, true, &new_n_past) != 0) {
+            *out_err = "multimodal eval failed";
+            mtmd_input_chunks_free(chunks);
+            return false;
+        }
+        b->n_past = new_n_past;
+    } else {
+        const int n_prompt_raw = -llama_tokenize(vocab, prompt.c_str(), static_cast<int>(prompt.size()), nullptr, 0, add_bos, true);
+        if (n_prompt_raw <= 0) {
+            *out_err = "tokenize sizing failed";
+            mtmd_input_chunks_free(chunks);
+            return false;
+        }
+
+        std::vector<llama_token> prompt_tokens(static_cast<size_t>(n_prompt_raw));
+        if (llama_tokenize(vocab, prompt.c_str(), static_cast<int>(prompt.size()), prompt_tokens.data(),
+                           static_cast<int>(prompt_tokens.size()), add_bos, true) < 0) {
+            *out_err = "tokenize failed";
+            mtmd_input_chunks_free(chunks);
+            return false;
+        }
+
+        llama_batch batch = llama_batch_get_one(prompt_tokens.data(), static_cast<int32_t>(prompt_tokens.size()));
+        if (llama_decode(b->ctx, batch)) {
+            *out_err = "text decode failed";
+            mtmd_input_chunks_free(chunks);
+            return false;
+        }
+        b->n_past += static_cast<llama_pos>(prompt_tokens.size());
+    }
 
     std::string acc;
-    for (int n_pos = 0; n_pos + batch.n_tokens < static_cast<int>(prompt_tokens.size()) + n_predict;) {
-        if (llama_decode(b->ctx, batch)) {
-            *out_err = "decode failed";
-            break;
-        }
-        n_pos += batch.n_tokens;
+    const int n_predict = std::max(1, max_new_tokens);
 
+    for (int i = 0; i < n_predict; ++i) {
         const llama_token new_token_id = llama_sampler_sample(b->sampler, b->ctx, -1);
         if (llama_vocab_is_eog(vocab, new_token_id)) break;
 
@@ -92,9 +138,15 @@ bool complete_internal(LlamaBundle* b, const std::string& prompt,
         if (on_token) on_token(piece);
 
         llama_token mutable_last = new_token_id;
-        batch = llama_batch_get_one(&mutable_last, 1);
+        llama_batch batch = llama_batch_get_one(&mutable_last, 1);
+        if (llama_decode(b->ctx, batch)) {
+            log_err("decode failed in loop");
+            break;
+        }
+        b->n_past++;
     }
 
+    mtmd_input_chunks_free(chunks);
     *out_text = std::move(acc);
     return true;
 }
@@ -103,6 +155,8 @@ bool complete_internal(LlamaBundle* b, const std::string& prompt,
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
     ggml_backend_load_all();
+    llama_log_set(llama_log_callback, nullptr);
+    log_info("JNI_OnLoad: backends loaded and logging initialized");
     return JNI_VERSION_1_6;
 }
 
@@ -110,21 +164,31 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_localagent_llm_LlamaNative_nativeLoad(JNIEnv* env, jclass, jstring jPath, jint nGpuLayers, jint nCtx, jint nThreads) {
     const char* path = env->GetStringUTFChars(jPath, nullptr);
     if (!path) return 0;
+
+    log_info(("nativeLoad: path=" + std::string(path) + " gpu=" + std::to_string(nGpuLayers)).c_str());
+
     auto* bundle = new LlamaBundle();
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = nGpuLayers;
+
     bundle->model = llama_model_load_from_file(path, mparams);
     env->ReleaseStringUTFChars(jPath, path);
+
     if (!bundle->model) {
         delete bundle;
         return 0;
     }
+
     bundle->vocab = llama_model_get_vocab(bundle->model);
+
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx = static_cast<uint32_t>(nCtx);
     cparams.n_threads = std::max(1, static_cast<int>(nThreads));
     bundle->ctx = llama_init_from_model(bundle->model, cparams);
     bundle->n_ctx = static_cast<int>(nCtx);
+    bundle->n_past = 0;
+
+    log_info("nativeLoad: success");
     return reinterpret_cast<jlong>(bundle);
 }
 
@@ -134,12 +198,18 @@ Java_com_localagent_llm_LlamaNative_nativeLoadVision(JNIEnv* env, jclass, jlong 
     auto* bundle = reinterpret_cast<LlamaBundle*>(handle);
     const char* path = env->GetStringUTFChars(jMmprojPath, nullptr);
     if (!path) return JNI_FALSE;
+
+    log_info(("nativeLoadVision: path=" + std::string(path)).c_str());
+
     if (bundle->mtmd_ctx) mtmd_free(bundle->mtmd_ctx);
     struct mtmd_context_params mparams = mtmd_context_params_default();
     mparams.use_gpu = true;
     bundle->mtmd_ctx = mtmd_init_from_file(path, bundle->model, mparams);
     env->ReleaseStringUTFChars(jMmprojPath, path);
-    return bundle->mtmd_ctx ? JNI_TRUE : JNI_FALSE;
+
+    bool ok = (bundle->mtmd_ctx != nullptr);
+    log_info(ok ? "nativeLoadVision: success" : "nativeLoadVision: failed");
+    return ok ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -151,6 +221,7 @@ Java_com_localagent_llm_LlamaNative_nativeUnload(JNIEnv*, jclass, jlong handle) 
     if (bundle->ctx) llama_free(bundle->ctx);
     if (bundle->model) llama_model_free(bundle->model);
     delete bundle;
+    log_info("nativeUnload: success");
 }
 
 extern "C" JNIEXPORT jstring JNICALL

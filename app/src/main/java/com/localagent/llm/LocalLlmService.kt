@@ -72,13 +72,28 @@ class LocalLlmService(
                                     runCatching {
                                         val uri = Uri.parse(url)
                                         appContext.contentResolver.openInputStream(uri)?.use { stream ->
-                                            val bitmap = BitmapFactory.decodeStream(stream)
-                                            if (bitmap != null) {
-                                                width = bitmap.width
-                                                height = bitmap.height
+                                            val original = BitmapFactory.decodeStream(stream)
+                                            if (original != null) {
+                                                val maxDim = 672 // Optimal for many vision models
+                                                val scaled = if (original.width > maxDim || original.height > maxDim) {
+                                                    val ratio = original.width.toFloat() / original.height.toFloat()
+                                                    val (w, h) = if (ratio > 1) {
+                                                        maxDim to (maxDim / ratio).toInt()
+                                                    } else {
+                                                        (maxDim * ratio).toInt() to maxDim
+                                                    }
+                                                    Bitmap.createScaledBitmap(original, w, h, true)
+                                                } else {
+                                                    original
+                                                }
+                                                
+                                                width = scaled.width
+                                                height = scaled.height
                                                 pixels = IntArray(width * height)
-                                                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-                                                bitmap.recycle()
+                                                scaled.getPixels(pixels, 0, width, 0, 0, width, height)
+                                                
+                                                if (scaled !== original) scaled.recycle()
+                                                original.recycle()
                                             }
                                         }
                                     }
