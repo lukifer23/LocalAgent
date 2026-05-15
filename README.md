@@ -20,6 +20,7 @@ Native Android shell around **[Hermes Agent](https://hermes-agent.nousresearch.c
 | Chat | Persists **`BridgeEvent`** stream; **`/help`**, **`/model`**, **`/skills`** handled in-process; **`/model`** routing modes; assistant markdown with **animated** code blocks. |
 | **Assistant rendering** | **CommonMark** + GFM tables, fenced code (copy), **KaTeX** offline; code blocks use enter animation. |
 | **Local LLM** | **True streaming inference** via llama.cpp JNI; hardware-accelerated on modern ARM (dotprod). |
+| **Agent Skills** | **Autonomous capabilities** in Termux: Shell access, File System management, and custom skill bootstrapping. |
 | **Downloads** | Unpinned GGUF: resume **`*.part`** with **`Range`**. Cold start ≥ **8 MiB** and range-capable CDN: parallel **2–8** segment fetch, merge-on-disk, fallback to resumable single connection on failure. Pinned SHA: single-stream download + verify (no parallel). |
 
 ---

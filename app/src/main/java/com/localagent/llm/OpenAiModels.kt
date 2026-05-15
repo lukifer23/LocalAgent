@@ -13,12 +13,42 @@ data class ChatCompletionRequest(
     val temperature: Double? = null,
     @SerialName("top_p") val topP: Double? = null,
     val stream: Boolean? = null,
+    val tools: List<ToolDefinition>? = null,
+    @SerialName("tool_choice") val toolChoice: String? = null,
+)
+
+@Serializable
+data class ToolDefinition(
+    val type: String, // "function"
+    val function: FunctionDefinition,
+)
+
+@Serializable
+data class FunctionDefinition(
+    val name: String,
+    val description: String? = null,
+    val parameters: JsonObject? = null,
 )
 
 @Serializable
 data class ChatCompletionMessage(
     val role: String,
     val content: MessageContent? = null,
+    @SerialName("tool_calls") val toolCalls: List<ToolCall>? = null,
+    @SerialName("tool_call_id") val toolCallId: String? = null,
+)
+
+@Serializable
+data class ToolCall(
+    val id: String,
+    val type: String, // "function"
+    val function: FunctionCall,
+)
+
+@Serializable
+data class FunctionCall(
+    val name: String,
+    val arguments: String, // JSON string
 )
 
 @Serializable(with = MessageContentSerializer::class)
@@ -106,6 +136,21 @@ data class ChunkChoice(
 data class ChunkDelta(
     val role: String? = null,
     val content: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<ToolCallChunk>? = null,
+)
+
+@Serializable
+data class ToolCallChunk(
+    val index: Int,
+    val id: String? = null,
+    val type: String? = null,
+    val function: FunctionCallChunk? = null,
+)
+
+@Serializable
+data class FunctionCallChunk(
+    val name: String? = null,
+    val arguments: String? = null,
 )
 
 @Serializable

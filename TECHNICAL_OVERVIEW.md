@@ -160,6 +160,23 @@ The inference engine supports **true real-time streaming**:
 
 ---
 
+## Track 3: Hermes Intelligence & Skills
+
+LocalAgent transforms the local LLM into an autonomous agent by bridging it to the Termux environment via **Hermes Skills**.
+
+### Skill Architecture
+*   **Markdown Definitions**: Skills are defined as Markdown files (e.g., `termux_shell.md`) containing instructions and available tool schemas.
+*   **Bootstrapping**: Essential skills (Shell, File System) are bundled as assets and automatically deployed to `~/.hermes/skills` in Termux during the one-click setup.
+*   **Bidirectional Sync**:
+    *   **App → Termux**: The `/skills push` command bundles local skill definitions into a high-performance bash script and injects them into Termux via the `RUN_COMMAND` intent.
+    *   **LLM → Termux**: The LLM uses OpenAI-compatible tool calling to emit `<tool_call>` tags, which the **Hermes Agent** in Termux executes against the local environment.
+
+### Default Capabilities
+1.  **Termux Shell**: Allows the agent to run arbitrary bash commands, manage packages (`pkg`), and monitor system status (`top`, `uptime`).
+2.  **File Manager**: Provides the agent with direct access to list, read, and write files in the Termux filesystem.
+
+---
+
 ## Build System: Hybrid Strategy (Termux)
 
 To support advanced Android APIs (35+) and complex NDK builds on-device, LocalAgent employs a **Hybrid Build Strategy**:

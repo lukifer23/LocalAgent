@@ -14,6 +14,7 @@ import com.localagent.auth.HermesEnvWriter
 import com.localagent.auth.OpenAiRoutingStore
 import com.localagent.runtime.HermesBridgeEnv
 import com.localagent.runtime.HermesPaths
+import com.localagent.runtime.SandboxSkills
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -55,7 +56,7 @@ class LocalLlmService(
                     if (modelHandle == 0L) {
                         return@withLock Result.failure(IllegalStateException("model not loaded"))
                     }
-                    val prompt = ChatPromptFormatter.format(req.messages)
+                    val prompt = ChatPromptFormatter.format(req.messages, req.tools)
                     val max = req.maxTokens?.coerceIn(8, 2048) ?: 256
                     val temperature = req.temperature?.toFloat()?.coerceIn(0f, 2f) ?: 0.8f
                     val topP = req.topP?.toFloat()?.coerceIn(0.01f, 1f) ?: 0.95f
@@ -232,6 +233,7 @@ class LocalLlmService(
             if (!loadModel(path.absolutePath)) {
                 error("failed to load GGUF")
             }
+            SandboxSkills.bootstrapDefaultSkills(ctx)
             startHttpServer()
             envWriter.syncFromVault(secrets)
         }

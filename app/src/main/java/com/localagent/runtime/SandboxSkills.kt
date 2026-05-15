@@ -12,6 +12,25 @@ object SandboxSkills {
 
     fun skillsDir(context: Context): File = File(HermesPaths.hermesRoot(context), "skills")
 
+    fun bootstrapDefaultSkills(context: Context): Result<Unit> {
+        val dir = skillsDir(context)
+        if (!dir.isDirectory && !dir.mkdirs()) {
+            return Result.failure(IllegalStateException("could not create sandbox skills dir"))
+        }
+        return runCatching {
+            context.assets.list("skills")?.forEach { name ->
+                val target = File(dir, name)
+                if (!target.exists()) {
+                    context.assets.open("skills/$name").use { input ->
+                        target.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun sanitizeFilename(name: String): String? {
         if (name.isEmpty() || name.contains('/') || name.contains("..")) return null
         if (!name.matches(Regex("^[a-zA-Z0-9._-]+$"))) return null
