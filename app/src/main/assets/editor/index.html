@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1e1e1e; }
+        #editor { height: 100%; width: 100%; color: #d4d4d4; font-family: monospace; }
+        textarea { width: 100%; height: 100%; background: transparent; color: inherit; border: none; outline: none; padding: 10px; font-size: 14px; resize: none; }
+    </style>
+</head>
+<body>
+    <div id="editor">
+        <textarea id="txt" oninput="AndroidEditor.onContentChanged(this.value)"></textarea>
+    </div>
+    <script>
+        const txt = document.getElementById('txt');
+        function setContent(content) {
+            txt.value = content;
+        }
+        function getContent() {
+            return txt.value;
+        }
+        // Minimal editor placeholder - in production we'd inject CodeMirror/Monaco here
+    </script>
+</body>
+</html>

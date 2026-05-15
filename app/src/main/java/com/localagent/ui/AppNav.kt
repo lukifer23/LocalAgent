@@ -178,7 +178,7 @@ fun AppNav(
 @Composable
 fun WorkstationView() {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Terminal", "Activity Log")
+    val tabTitles = listOf("Terminal", "Activity Log", "Editor")
 
     Row(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -198,6 +198,7 @@ fun WorkstationView() {
             when (selectedTab) {
                 0 -> TerminalRoute()
                 1 -> ActivityLogRoute()
+                2 -> EditorRoute()
             }
         }
     }
