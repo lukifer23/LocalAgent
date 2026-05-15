@@ -40,7 +40,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +53,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.localagent.LocalAgentApp
 import com.localagent.R
 import com.localagent.runtime.DeviceIpv4
@@ -62,51 +65,15 @@ import com.localagent.runtime.HermesPaths
 import com.localagent.runtime.SandboxSkills
 import com.localagent.termux.TermuxRunCommand
 import com.localagent.termux.TermuxRunResultSummary
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 private enum class PendingTermuxAction {
     None,
     InstallHermes,
     PushEnv,
     KillHermes,
-}
-
-private fun hermesLogTime(): String =
-    SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-
-private fun appendTermuxRunToLog(
-    log: MutableList<String>,
-    s: TermuxRunResultSummary,
-) {
-    val sb = StringBuilder()
-    sb.append("── ").append(hermesLogTime()).append(" Termux [").append(s.kind).append("] exit=").append(s.exitCode)
-    s.pluginErr?.let { sb.append(" plugin=").append(it) }
-    sb.append(" ──\n")
-    if (!s.errmsg.isNullOrBlank()) sb.append(s.errmsg.trim()).append('\n')
-    if (!s.stderr.isNullOrBlank()) sb.append(s.stderr.trimEnd().take(4000)).append('\n')
-    if (!s.stdout.isNullOrBlank()) sb.append(s.stdout.trimEnd().take(4000)).append('\n')
-    log.add(0, sb.toString().trimEnd())
-    while (log.size > 40) log.removeAt(log.lastIndex)
-}
-
-private fun appendBridgeDiagToLog(
-    log: MutableList<String>,
-    kind: String,
-    message: String,
-) {
-    log.add(
-        0,
-        "── ${hermesLogTime()} bridge [$kind] ${message.trim().take(2000)} ──",
-    )
-    while (log.size > 40) log.removeAt(log.lastIndex)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -120,6 +87,8 @@ fun HermesSetupRoute() {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    val activityVm: ActivityLogViewModel = viewModel(factory = ActivityLogViewModelFactory(container))
+
     val appCtx = context.applicationContext
     val piInstall = remember(appCtx) { TermuxRunCommand.resultPendingIntent(appCtx, 4401, "install") }
     val piDoctor = remember(appCtx) { TermuxRunCommand.resultPendingIntent(appCtx, 4402, "doctor") }
@@ -129,14 +98,12 @@ fun HermesSetupRoute() {
 
     val sandboxSkillsDir = remember(context) { File(HermesPaths.hermesRoot(context), "skills") }
 
-    val activityLog = remember { mutableStateListOf<String>() }
     var bridgeStatusLine by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         coroutineScope {
             launch {
                 container.termuxRunResults.collect { s ->
-                    appendTermuxRunToLog(activityLog, s)
                     val internalOk = s.pluginErr == null || s.pluginErr == Activity.RESULT_OK
                     val failed = s.exitCode != 0 || !internalOk
                     if (failed) {
@@ -161,7 +128,6 @@ fun HermesSetupRoute() {
             }
             launch {
                 container.bridgeServer.diagnostics.collect { d ->
-                    appendBridgeDiagToLog(activityLog, d.kind, d.message)
                     bridgeStatusLine = "${d.kind}: ${d.message.take(120)}"
                 }
             }
@@ -309,7 +275,6 @@ fun HermesSetupRoute() {
                                         context.getString(R.string.hermes_disconnect_bridge_done, n),
                                     )
                                 }
-                                appendBridgeDiagToLog(activityLog, "manual", "disconnect_all_clients count=$n")
                             },
                             modifier = Modifier.weight(1f),
                         ) {
@@ -358,14 +323,14 @@ fun HermesSetupRoute() {
                     ) {
                         Text(stringResource(R.string.hermes_activity_log_title), style = MaterialTheme.typography.titleSmall)
                         TextButton(
-                            onClick = { activityLog.clear() },
-                            enabled = activityLog.isNotEmpty(),
+                            onClick = { activityVm.clear() },
+                            enabled = activityVm.logLines.isNotEmpty(),
                         ) {
                             Text(stringResource(R.string.hermes_activity_log_clear))
                         }
                     }
                     val innerScroll = rememberScrollState()
-                    if (activityLog.isEmpty()) {
+                    if (activityVm.logLines.isEmpty()) {
                         Text(
                             stringResource(R.string.hermes_activity_log_empty),
                             style = MaterialTheme.typography.bodySmall,
@@ -374,7 +339,7 @@ fun HermesSetupRoute() {
                         )
                     } else {
                         Text(
-                            activityLog.joinToString("\n\n"),
+                            activityVm.logLines.joinToString("\n\n"),
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                             modifier =
@@ -491,7 +456,7 @@ fun HermesSetupRoute() {
 
             BridgeEnvActions(
                 onCopyBridge = {
-                    clipboard.setText(AnnotatedString(bridgeSnippet))
+                    clipboard.setText(AnnotatedString(HermesBridgeEnv.bridgeSnippet(context)))
                     scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.hermes_copied_clipboard)) }
                 },
                 onRefreshEnv = {
