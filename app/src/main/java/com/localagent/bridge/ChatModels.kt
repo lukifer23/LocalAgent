@@ -15,6 +15,7 @@ data class ChatLine(
     val id: String,
     val role: Role,
     val text: String,
+    val imageUri: String? = null,
     val approvalPromptId: String? = null,
 )
 

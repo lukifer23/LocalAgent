@@ -90,6 +90,7 @@ class ChatRepository(
                         sessionId = sessionId,
                         role = Role.User.name,
                         body = event.text,
+                        imageUri = event.imageUri,
                         createdAtEpochMs = event.ts,
                         approvalPromptId = null,
                     ),

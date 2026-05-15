@@ -1,6 +1,9 @@
 package com.localagent.llm
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -39,6 +42,8 @@ class LocalLlmService(
     @Volatile
     private var loadedModelLabel: String = ""
 
+    private var mmprojLoadedPath: String? = null
+
     private val server =
         OpenAiCompatibleServer(
             port = HermesPaths.LLM_HTTP_PORT,
@@ -54,11 +59,43 @@ class LocalLlmService(
                     val max = req.maxTokens?.coerceIn(8, 2048) ?: 256
                     val temperature = req.temperature?.toFloat()?.coerceIn(0f, 2f) ?: 0.8f
                     val topP = req.topP?.toFloat()?.coerceIn(0.01f, 1f) ?: 0.95f
+                    
+                    var pixels: IntArray? = null
+                    var width = 0
+                    var height = 0
+
+                    // Extract image pixels from multimodal request if present
+                    req.messages.lastOrNull()?.let { msg ->
+                        when (val content = msg.content) {
+                            is MessageContent.Multimodal -> {
+                                content.parts.find { it.type == "image_url" }?.imageUrl?.url?.let { url ->
+                                    runCatching {
+                                        val uri = Uri.parse(url)
+                                        appContext.contentResolver.openInputStream(uri)?.use { stream ->
+                                            val bitmap = BitmapFactory.decodeStream(stream)
+                                            if (bitmap != null) {
+                                                width = bitmap.width
+                                                height = bitmap.height
+                                                pixels = IntArray(width * height)
+                                                bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+                                                bitmap.recycle()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else -> null
+                        }
+                    }
+
                     val raw =
                         if (onToken != null) {
                             LlamaNative.nativeStream(
                                 modelHandle,
                                 prompt,
+                                pixels,
+                                width,
+                                height,
                                 max,
                                 false,
                                 temperature,
@@ -69,6 +106,9 @@ class LocalLlmService(
                             LlamaNative.nativeComplete(
                                 modelHandle,
                                 prompt,
+                                pixels,
+                                width,
+                                height,
                                 max,
                                 false,
                                 temperature,
@@ -113,6 +153,7 @@ class LocalLlmService(
         nGpuLayers: Int? = null,
         nCtx: Int? = null,
         nThreads: Int? = null,
+        mmprojPath: String? = null,
     ): Boolean =
         mutex.withLock {
             unloadLocked()
@@ -133,6 +174,13 @@ class LocalLlmService(
             }
             handle = h
             loadedModelLabel = File(path).nameWithoutExtension
+            
+            if (mmprojPath != null) {
+                if (LlamaNative.nativeLoadVision(h, mmprojPath)) {
+                    mmprojLoadedPath = mmprojPath
+                }
+            }
+
             dataStore.edit {
                 it[LAST_MODEL_PATH] = path
                 it[N_GPU_LAYERS] = layers
@@ -140,6 +188,18 @@ class LocalLlmService(
                 it[N_THREADS] = threads
             }
             true
+        }
+
+    suspend fun loadVisionProjector(path: String): Boolean =
+        mutex.withLock {
+            val h = handle
+            if (h == 0L) return false
+            if (LlamaNative.nativeLoadVision(h, path)) {
+                mmprojLoadedPath = path
+                true
+            } else {
+                false
+            }
         }
 
     suspend fun bootstrapBundledQwenLocalFirst(
@@ -206,6 +266,9 @@ class LocalLlmService(
                 LlamaNative.nativeComplete(
                     h,
                     "<|im_start|>user\nping\n<|im_start|>assistant\n",
+                    null,
+                    0,
+                    0,
                     16,
                     false,
                     0.2f,
@@ -239,6 +302,7 @@ class LocalLlmService(
             handle = 0
         }
         loadedModelLabel = ""
+        mmprojLoadedPath = null
     }
 
     fun modelDownloader(): ModelDownloadManager = downloader

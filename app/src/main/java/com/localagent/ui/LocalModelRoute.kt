@@ -365,6 +365,29 @@ private fun PerformanceTuningSection(
                 scope.launch { llm.setNGpuLayers(it.toInt()) }
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+        Text("Vision Support", style = MaterialTheme.typography.titleSmall)
+        var mmprojPath by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = mmprojPath,
+            onValueChange = { mmprojPath = it },
+            label = { Text("Vision Projector Path (.mmproj)") },
+            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = {
+                IconButton(onClick = {
+                    scope.launch {
+                        if (llm.loadVisionProjector(mmprojPath)) {
+                            snackbarHostState.showSnackbar("Vision projector loaded!")
+                        } else {
+                            snackbarHostState.showSnackbar("Failed to load vision projector.")
+                        }
+                    }
+                }) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "Load Vision")
+                }
+            }
+        )
     }
 }
 

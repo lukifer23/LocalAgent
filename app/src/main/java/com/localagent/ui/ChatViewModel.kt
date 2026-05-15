@@ -45,6 +45,9 @@ class ChatViewModel(
     private val _routingMode = MutableStateFlow(routingStore.mode())
     val routingMode: StateFlow<OpenAiRoutingStore.Mode> = _routingMode.asStateFlow()
 
+    private val _attachedImageUri = MutableStateFlow<String?>(null)
+    val attachedImageUri: StateFlow<String?> = _attachedImageUri.asStateFlow()
+
     val state: StateFlow<ChatUiState> =
         combine(repository.activeSessionId, repository.activeMessages) { id, messages ->
             ChatUiState(
@@ -66,6 +69,10 @@ class ChatViewModel(
 
     fun selectSession(id: String?) {
         repository.selectSession(id)
+    }
+
+    fun attachImage(uri: String?) {
+        _attachedImageUri.value = uri
     }
 
     fun deleteSession(id: String) {
@@ -107,7 +114,22 @@ class ChatViewModel(
     fun sendMessage(text: String) {
         viewModelScope.launch {
             val trimmed = text.trim()
-            val sid = state.value.sessionId
+            val sid = state.value.sessionId ?: return@launch
+            val image = _attachedImageUri.value
+            _attachedImageUri.value = null
+
+            // If we have an image, we record it locally first
+            if (image != null) {
+                repository.handleEvent(
+                    com.localagent.bridge.BridgeEvent.UserMessage(
+                        ts = System.currentTimeMillis(),
+                        text = trimmed,
+                        sessionId = sid,
+                        imageUri = image
+                    )
+                )
+            }
+
             when {
                 trimmed.equals("/help", ignoreCase = true) ->
                     appendOrHint(
@@ -219,8 +241,14 @@ class ChatViewModel(
                 }
 
                 else -> {
+                    // Vision bypass: for now if image is attached, we might need a special BridgeEvent or just handle it in LocalLlmService
+                    // Real implementation will need BridgeEvent.UserMessage to support an optional imageUri or similar
                     val intent = TermuxRunCommand.backgroundChat(appContext, text)
                     startTermux(intent)
+                    // Also record the message locally if bridge doesn't echo it immediately (Bridge normally echos user messages)
+                    // Actually, let's let the bridge handle the insertion for user messages to avoid duplication.
+                    // But if it's a multimodal message, the bridge in Termux doesn't know about the image yet.
+                    // This is a major gap: Hermes CLI doesn't support local image attachments yet.
                 }
             }
         }
@@ -251,6 +279,7 @@ private fun ChatMessageEntity.toChatLine(): ChatLine {
         id = id,
         role = role,
         text = body,
+        imageUri = imageUri,
         approvalPromptId = approvalPromptId,
     )
 }

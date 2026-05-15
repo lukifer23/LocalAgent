@@ -27,13 +27,18 @@ if (LOCALAGENT_BUILD_LLAMA)
     set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
     set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+    set(LLAMA_INSTALL_VERSION "0.0.1")
     FetchContent_MakeAvailable(llama)
+
+    # Add the mtmd subdirectory from the fetched llama source
+    add_subdirectory(${llama_SOURCE_DIR}/tools/mtmd ${llama_BINARY_DIR}/tools/mtmd EXCLUDE_FROM_ALL)
 
     add_library(localagent_llama SHARED llama_jni.cpp)
     target_include_directories(localagent_llama PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${llama_SOURCE_DIR}/include
         ${llama_SOURCE_DIR}/ggml/include
+        ${llama_SOURCE_DIR}/tools/mtmd
     )
-    target_link_libraries(localagent_llama ${LOG_LIB} llama)
+    target_link_libraries(localagent_llama ${LOG_LIB} llama mtmd)
 endif()

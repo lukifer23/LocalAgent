@@ -34,6 +34,7 @@ android {
                     "-DCMAKE_C_FLAGS=-march=armv8.2-a+dotprod",
                     "-DCMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod"
                 )
+                targets += listOf("localagent_llama", "localagent_native")
             }
         }
     }
@@ -87,6 +88,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material3.window.size)
     implementation(libs.androidx.material3.adaptive.navigation.suite)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network)
     implementation(libs.compose.material.icons)
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.lifecycle.runtime.compose)

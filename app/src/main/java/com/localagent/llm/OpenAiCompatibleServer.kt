@@ -90,7 +90,7 @@ class OpenAiCompatibleServer(
                                                 message =
                                                     ChatCompletionMessage(
                                                         role = "assistant",
-                                                        content = text,
+                                                        content = MessageContent.Text(text),
                                                     ),
                                                 finishReason = "stop",
                                             ),

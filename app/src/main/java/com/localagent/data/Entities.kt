@@ -21,6 +21,8 @@ data class ChatMessageEntity(
     val role: String,
     val body: String,
     val createdAtEpochMs: Long,
+    /** Optional image attachment URI */
+    val imageUri: String? = null,
     /** Hermes approval prompt id when role is Meta approval row */
     val approvalPromptId: String? = null,
 )

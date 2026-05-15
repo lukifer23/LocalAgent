@@ -18,8 +18,48 @@ data class ChatCompletionRequest(
 @Serializable
 data class ChatCompletionMessage(
     val role: String,
-    val content: String? = null,
+    val content: MessageContent? = null,
 )
+
+@Serializable(with = MessageContentSerializer::class)
+sealed class MessageContent {
+    data class Text(val text: String) : MessageContent()
+    data class Multimodal(val parts: List<ContentPart>) : MessageContent()
+}
+
+@Serializable
+data class ContentPart(
+    val type: String,
+    val text: String? = null,
+    @SerialName("image_url") val imageUrl: ImageUrl? = null,
+)
+
+@Serializable
+data class ImageUrl(
+    val url: String, // base64 data:image/jpeg;base64,...
+)
+
+object MessageContentSerializer : kotlinx.serialization.KSerializer<MessageContent> {
+    override val descriptor = kotlinx.serialization.descriptors.buildClassSerialDescriptor("MessageContent")
+    
+    override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: MessageContent) {
+        when (value) {
+            is MessageContent.Text -> encoder.encodeString(value.text)
+            is MessageContent.Multimodal -> encoder.encodeSerializableValue(kotlinx.serialization.builtins.ListSerializer(ContentPart.serializer()), value.parts)
+        }
+    }
+
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): MessageContent {
+        // Simple heuristic for now: if it's a string, it's text. If it's an array, it's multimodal.
+        val input = decoder as? kotlinx.serialization.json.JsonDecoder ?: error("Only JSON supported")
+        val element = input.decodeJsonElement()
+        return if (element is kotlinx.serialization.json.JsonPrimitive && element.isString) {
+            MessageContent.Text(element.content)
+        } else {
+            MessageContent.Multimodal(input.json.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(ContentPart.serializer()), element))
+        }
+    }
+}
 
 @Serializable
 data class ChatCompletionResponse(

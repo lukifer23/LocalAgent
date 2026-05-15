@@ -25,6 +25,7 @@ sealed class BridgeEvent {
         override val ts: Long,
         val text: String,
         val sessionId: String? = null,
+        @SerialName("image_uri") val imageUri: String? = null,
     ) : BridgeEvent()
 
     @Serializable
